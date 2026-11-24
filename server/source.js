@@ -4,10 +4,12 @@
 //  - Si SharePoint/Internet falla, se responde con la ultima copia (y se avisa de la fecha de esa copia).
 import fs from 'node:fs';
 import path from 'node:path';
-import { parseWorkbook } from './excel.js';
+import { parseWorkbook, parseRows, normalizeCode } from './excel.js';
 
 const CACHE_NAME = 'Control_Deuda_Vacaciones.cache.xlsb';
 const META_NAME = 'Control_Deuda_Vacaciones.cache.json';
+const ROWS_NAME = 'Control_Deuda_Vacaciones.rows.json';   // filas recibidas de Power Automate
+const ROWS_META = 'Control_Deuda_Vacaciones.rows.meta.json';
 
 export class DataSource {
   /**
@@ -43,6 +45,8 @@ export class DataSource {
 
   get cachePath() { return path.join(this.dataDir, CACHE_NAME); }
   get metaPath() { return path.join(this.dataDir, META_NAME); }
+  get rowsPath() { return path.join(this.dataDir, ROWS_NAME); }
+  get rowsMetaPath() { return path.join(this.dataDir, ROWS_META); }
 
   // ---------- arranque ----------
   async init() {
@@ -58,19 +62,24 @@ export class DataSource {
     return this.state;
   }
 
+  _readMeta(file) {
+    try { return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {}; } catch { return {}; }
+  }
+
   _loadLocalCopy() {
     const candidates = [];
-    if (this.localFile) candidates.push({ file: this.localFile, via: 'archivo local' });
-    candidates.push({ file: this.cachePath, via: 'copia local' });
+    if (this.localFile) candidates.push({ file: this.localFile, via: 'archivo local', kind: 'xlsx', savedAt: Infinity });
+    const metaX = this._readMeta(this.metaPath);
+    const metaR = this._readMeta(this.rowsMetaPath);
+    candidates.push({ file: this.cachePath, via: 'copia local', kind: 'xlsx', meta: metaX, savedAt: Date.parse(metaX.savedAt || 0) || 0 });
+    candidates.push({ file: this.rowsPath, via: 'copia local', kind: 'rows', meta: metaR, savedAt: Date.parse(metaR.savedAt || 0) || 0 });
+    candidates.sort((a, b) => b.savedAt - a.savedAt); // la copia mas reciente primero
     for (const c of candidates) {
       try {
         if (!fs.existsSync(c.file)) continue;
         const buf = fs.readFileSync(c.file);
-        const parsed = parseWorkbook(buf);
-        let meta = {};
-        if (c.file === this.cachePath && fs.existsSync(this.metaPath)) {
-          try { meta = JSON.parse(fs.readFileSync(this.metaPath, 'utf8')); } catch { /* ignore */ }
-        }
+        const parsed = c.kind === 'rows' ? parseRows(buf.toString('utf8')) : parseWorkbook(buf);
+        const meta = c.meta || {};
         this._apply(parsed, {
           via: meta.via && c.via === 'copia local' ? `${meta.via} (copia local)` : c.via,
           fileName: meta.fileName || path.basename(c.file),
@@ -96,12 +105,12 @@ export class DataSource {
     this.state.lastError = null;
   }
 
-  _saveCopy(buffer, meta) {
+  _saveCopy(buffer, meta, { file = this.cachePath, metaFile = this.metaPath } = {}) {
     try {
-      const tmp = this.cachePath + '.tmp';
+      const tmp = file + '.tmp';
       fs.writeFileSync(tmp, buffer);
-      fs.renameSync(tmp, this.cachePath);
-      fs.writeFileSync(this.metaPath, JSON.stringify({ ...meta, savedAt: new Date().toISOString() }, null, 2));
+      fs.renameSync(tmp, file);
+      fs.writeFileSync(metaFile, JSON.stringify({ ...meta, savedAt: new Date().toISOString() }, null, 2));
     } catch (e) {
       this.log.warn(`[datos] no se pudo guardar la copia local: ${e.message}`);
     }
@@ -157,12 +166,23 @@ export class DataSource {
     return parsed.info;
   }
 
+  /** Filas en JSON (Power Automate "Obtener filas de una tabla"). */
+  uploadRows(json, { modified = null, via = 'power automate (filas)' } = {}) {
+    const parsed = parseRows(json); // valida antes de guardar
+    const d = modified ? new Date(modified) : null;
+    const fileModified = d && !Number.isNaN(d.getTime()) ? d.toISOString() : new Date().toISOString();
+    const fileName = 'filas.json';
+    this._apply(parsed, { via, fileName, fileModified });
+    this._saveCopy(Buffer.from(typeof json === 'string' ? json : JSON.stringify(json)), { fileName, fileModified, via }, { file: this.rowsPath, metaFile: this.rowsMetaPath });
+    return parsed.info;
+  }
+
   // ---------- consultas ----------
   /** Busca un empleado; antes intenta refrescar en vivo. */
   async lookup(code) {
     await this.checkLive(false);
     if (!this.data) return null;
-    const emp = this.data.empleados.get(code);
+    const emp = this.data.empleados.get(normalizeCode(code));
     if (!emp) return null;
     return { ...emp, movimientos: this.data.movimientos.get(code) || [] };
   }

@@ -1,19 +1,28 @@
 # Sincronizar el Excel con Power Automate
 
-Con este flujo no hace falta registrar ninguna aplicación en Entra ID. Cada vez que RRHH guarda
-`Control_Deuda_Vacaciones.xlsb` en SharePoint, Power Automate lo envía a la app, que lo valida, lo guarda
-en su volumen y lo usa desde ese momento. La pantalla muestra "Sincronizado desde SharePoint" y la fecha
-de modificación del archivo en SharePoint.
+Con Power Automate no hace falta registrar ninguna aplicación en Entra ID. Cada vez que RRHH guarda el Excel en
+SharePoint, un flujo manda los datos a la app, que los valida, los guarda en su volumen y los usa desde ese momento.
+La pantalla muestra "Sincronizado desde SharePoint" y la fecha de modificación del archivo.
+
+Hay dos maneras de montar el flujo. Las dos acaban en una acción **HTTP** hacia la app:
+
+| | Variante 1: enviar el archivo | Variante 2: enviar las filas (*Obtener filas de una tabla*) |
+|---|---|---|
+| Formato del Excel | `.xlsb` o `.xlsx`, tal como está | **solo `.xlsx`**, con dos **tablas** de Excel (`TablaControl`, `TablaMovimientos`) |
+| Acciones del flujo | Obtener contenido del archivo + HTTP | Obtener filas ×2 + HTTP |
+| Endpoint de la app | `POST /api/admin/upload` | `POST /api/admin/rows` |
+| Cambios en el Excel | ninguno | convertir a `.xlsx` y crear las tablas una vez |
 
 ```
  RRHH guarda el Excel ──► SharePoint ──► Power Automate (cuando se modifica un archivo)
-                                               │  Obtener contenido del archivo
+                                               │  variante 1: Obtener contenido del archivo
+                                               │  variante 2: Obtener filas de TablaControl y TablaMovimientos
                                                ▼
-                                   HTTP POST /api/admin/upload ──► app en Railway (volumen /data)
+                                   HTTP POST a la app en Railway ──► se guarda en el volumen /data
 ```
 
-> **Licencia**: la acción **HTTP** de Power Automate es un conector *premium*. Hace falta que la cuenta que
-> crea el flujo tenga Power Automate Premium (o un plan por flujo). Si no la tienes, las alternativas son
+> **Licencia**: la acción **HTTP** de Power Automate es un conector *premium* en las dos variantes. Hace falta que la
+> cuenta que crea el flujo tenga Power Automate Premium (o un plan por flujo). Si no la tienes, las alternativas son
 > la lectura directa con Microsoft Graph (README, sección 2) o subir el Excel a mano desde `/admin.html`.
 
 ## Datos que necesitas
@@ -25,7 +34,7 @@ de modificación del archivo en SharePoint.
 | Sitio de SharePoint | `https://airlinkdistribution.sharepoint.com/sites/AirlinkDR` |
 | Biblioteca y carpeta del Excel | donde RRHH guarda `Control_Deuda_Vacaciones.xlsb` |
 
-## Crear el flujo (10 minutos)
+## Variante 1: enviar el archivo (10 minutos)
 
 1. Entra en <https://make.powerautomate.com> con la cuenta de la empresa → **Crear** → **Flujo de nube automatizado**.
    Nombre: `Sincronizar Control Deuda Vacaciones`. Desencadenador: busca **SharePoint** y elige
@@ -73,11 +82,57 @@ de modificación del archivo en SharePoint.
 
    También lo ves en `https://deuda-vacaciones-production.up.railway.app/api/status` o pulsando **Ver estado** en `/admin.html`.
 
+## Variante 2: enviar las filas con "Obtener filas de una tabla"
+
+### Preparar el Excel (una sola vez, lo hace RRHH)
+
+1. Abre `Control_Deuda_Vacaciones.xlsb` y guárdalo como **Libro de Excel (.xlsx)** en la misma carpeta de SharePoint
+   (Archivo → Guardar como). A partir de ahora RRHH trabaja sobre el `.xlsx`.
+2. Hoja **Control**: selecciona desde la fila de cabecera (`Código`, `Nombre`, …, `Estado`) hasta la **última fila de
+   empleado**, sin incluir el título de arriba ni la fila de totales de abajo. Insertar → **Tabla**, marca *La tabla tiene
+   encabezados*. En *Diseño de tabla* → *Nombre de tabla*: `TablaControl`.
+3. Hoja **Movimientos**: selecciona desde la cabecera (`Fecha`, `Código`, …, `Observación`) hasta la última línea con datos
+   (o unas filas más, para dejar sitio). Insertar → **Tabla**, con encabezados. Nombre: `TablaMovimientos`.
+4. Guarda. Las tablas crecen solas cuando se escribe justo debajo de la última fila, así que RRHH sigue trabajando igual.
+   Las filas vacías o sin código las ignora la app.
+
+### El flujo
+
+1. **Desencadenador**: igual que en la variante 1 (SharePoint, *Cuando se modifica un archivo (solo propiedades)*).
+2. **Condición**: *Nombre de archivo con extensión* es igual a `Control_Deuda_Vacaciones.xlsx`.
+3. **Obtener filas de una tabla** (Excel Online (Business)) → renómbrala `Filas Control`.
+   - *Ubicación*: `https://airlinkdistribution.sharepoint.com/sites/AirlinkDR` · *Biblioteca de documentos*: la del Excel ·
+     *Archivo*: `Control_Deuda_Vacaciones.xlsx` · *Tabla*: `TablaControl`.
+   - *Opciones avanzadas* → *Formato de fecha y hora*: **ISO 8601**.
+   - ⋯ → *Configuración* → **Paginación**: activada, umbral `5000` (sin esto la acción devuelve como máximo 256 filas).
+4. Otra **Obtener filas de una tabla** → renómbrala `Filas Movimientos`, mismos datos con *Tabla*: `TablaMovimientos`
+   y la misma paginación.
+5. **HTTP**
+   - *Método*: `POST` · *URI*: `https://deuda-vacaciones-production.up.railway.app/api/admin/rows`
+   - *Encabezados*: `x-admin-key` = la `ADMIN_KEY` · `Content-Type` = `application/json` ·
+     `x-file-modified` = contenido dinámico **Modificado** (del desencadenador) · `x-source` = `power automate (filas)`
+   - *Cuerpo*: escribe esto y, donde pone `value`, inserta el contenido dinámico **value** de cada acción
+     (aparecen como *Filas Control → value* y *Filas Movimientos → value*):
+
+     ```json
+     {
+       "control": [value de Filas Control],
+       "movimientos": [value de Filas Movimientos]
+     }
+     ```
+
+     Si el diseñador lo pone entre comillas, bórralas: `"control": value` tiene que quedar sin comillas alrededor del token.
+   - *Configuración* de la acción HTTP → **Entradas seguras** y **Salidas seguras**.
+6. **Guardar** y **Probar**. La respuesta `200` es igual que en la variante 1 pero con `"via": "power automate (filas)"`.
+
+La app acepta las claves tal como vienen de Excel (`Código`, `Días adeudados iniciales`, `Deuda restante (RD$)`…),
+los números como texto, y las fechas en ISO 8601 o como número de serie de Excel. Ignora `@odata.etag` e `ItemInternalId`.
+
 ## Qué pasa en cada caso
 
 - **El Excel está abierto en Excel Online con autoguardado**: el desencadenador puede dispararse varias veces
   durante la edición. No pasa nada: cada envío reemplaza al anterior en un segundo.
-- **El archivo que llega no es un Excel válido** (por ejemplo un guardado a medias): la app responde `400`, el flujo
+- **Lo que llega no es válido** (un guardado a medias, o faltan columnas en la tabla): la app responde `400`, el flujo
   queda en rojo y se **conserva la versión anterior**. El siguiente guardado lo arregla.
 - **Railway está caído en el momento del guardado**: la ejecución falla; vuelve a ejecutarla desde el historial
   del flujo (*Volver a enviar*) o guarda el Excel otra vez.

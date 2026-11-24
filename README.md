@@ -26,7 +26,7 @@ mismas fórmulas del libro (`|días| × salario diario`, `MAX(deuda − aplicado
 
 | Opción | Qué necesita | Cómo se actualiza |
 |---|---|---|
-| **A. Power Automate** (recomendada, ver [docs/POWER_AUTOMATE.md](docs/POWER_AUTOMATE.md)) | un flujo con la acción HTTP (conector premium) | cada vez que RRHH guarda el Excel, el flujo lo envía a `/api/admin/upload` |
+| **A. Power Automate** (recomendada, ver [docs/POWER_AUTOMATE.md](docs/POWER_AUTOMATE.md)) | un flujo con la acción HTTP (conector premium) | cada vez que RRHH guarda el Excel, el flujo manda el archivo a `/api/admin/upload` o las filas de sus tablas a `/api/admin/rows` |
 | **B. Microsoft Graph** (sección 2) | una app registrada en Entra ID por TI | la app lee SharePoint en vivo en cada consulta |
 | **C. Subida manual** | la `ADMIN_KEY` | alguien sube el archivo en `/admin.html` |
 

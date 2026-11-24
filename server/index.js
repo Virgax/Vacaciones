@@ -92,6 +92,21 @@ app.post('/api/admin/upload', requireAdmin, express.raw({ type: () => true, limi
     res.status(400).json({ error: `No se pudo leer el Excel: ${e.message}` });
   }
 });
+// Filas en JSON desde Power Automate ("Obtener filas de una tabla"): { "control": [...], "movimientos": [...] }
+// Opcionales: "modified" en el cuerpo o x-file-modified; x-source.
+app.post('/api/admin/rows', requireAdmin, express.json({ limit: '40mb', type: () => true }), (req, res) => {
+  const body = req.body;
+  if (!body || typeof body !== 'object') return res.status(400).json({ error: 'Envia un JSON con "control" (y opcionalmente "movimientos")' });
+  const modified = req.get('x-file-modified') || body.modified || body.modificado || req.query.modified || null;
+  const via = req.get('x-source') || body.source || req.query.source || 'power automate (filas)';
+  try {
+    const info = source.uploadRows(body, { modified: modified ? String(modified) : null, via: String(via) });
+    console.log(`[datos] filas (${via}): ${info.empleados} empleados, ${info.movimientos} movimientos, modificado ${source.state.fileModified}`);
+    res.json({ ok: true, info, ...source.status() });
+  } catch (e) {
+    res.status(400).json({ error: `No se pudieron leer las filas: ${e.message}` });
+  }
+});
 app.get('/api/admin/status', requireAdmin, (req, res) => res.json(source.status()));
 
 app.use(express.static(path.join(__dirname, '..', 'public'), { etag: true, maxAge: '1h', index: 'index.html' }));

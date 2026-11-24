@@ -90,6 +90,7 @@ function toISODate(v) {
     return `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`;
   }
   const s = String(v).trim();
+  if (/^\d{4,6}(\.\d+)?$/.test(s)) return toISODate(Number(s));
   const m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
   if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
   const d = new Date(s);
@@ -99,25 +100,41 @@ function toISODate(v) {
 const round2 = (n) => (n == null ? null : Math.round(n * 100) / 100);
 const round3 = (n) => (n == null ? null : Math.round(n * 1000) / 1000);
 
+/** Convierte una fila (array) + cabecera en un objeto { "texto de cabecera": valor }. */
+function rowToObject(header, row) {
+  const o = {};
+  header.forEach((h, i) => { if (h != null && String(h).trim()) o[String(h)] = row[i] ?? null; });
+  return o;
+}
+
+/** Busca en un objeto la clave cuya cabecera normalizada contiene alguna de las agujas. */
+function pick(obj, needles) {
+  for (const k of Object.keys(obj)) {
+    const nk = norm(k);
+    if (needles.some((n) => nk.includes(n))) return obj[k];
+  }
+  return null;
+}
+
 /**
- * Parsea el libro y devuelve { empleados: Map<codigo, registro>, movimientos: Map<codigo, []>, info }.
+ * Construye los datos a partir de filas como objetos (clave = texto de la cabecera), que es lo que devuelve
+ * tanto la lectura del libro como la accion "Obtener filas de una tabla" de Power Automate.
  * Los valores calculados por Excel (deuda inicial, dias pendientes, deuda restante) se usan tal cual;
- * si una celda viene vacia se recalculan con las mismas formulas del libro.
+ * si vienen vacios se recalculan con las mismas formulas del libro.
  */
-export function parseWorkbook(buffer) {
-  const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true });
-  const control = pickSheet(wb, 'Control', ['codigo', 'dias adeudados', 'deuda inicial']);
-  if (!control) throw new Error('No se encontro la hoja "Control" (cabeceras Codigo / Dias adeudados / Deuda inicial)');
-  const cols = columnMap(control.rows[control.headerIdx], CONTROL_COLS);
-  for (const k of ['codigo', 'nombre', 'diasAdeudados']) {
-    if (cols[k] == null) throw new Error(`Falta la columna "${k}" en la hoja ${control.name}`);
+export function buildData({ control = [], movimientos: movRows = [] } = {}) {
+  if (!Array.isArray(control) || !control.length) throw new Error('No hay filas de la tabla Control');
+  const sample = control.find((r) => r && typeof r === 'object') || {};
+  for (const [k, needles] of [['Codigo', CONTROL_COLS.codigo], ['Nombre', CONTROL_COLS.nombre], ['Dias adeudados', CONTROL_COLS.diasAdeudados]]) {
+    if (!Object.keys(sample).some((h) => needles.some((n) => norm(h).includes(n)))) throw new Error(`Falta la columna "${k}" en las filas de Control`);
   }
 
   const empleados = new Map();
-  for (const row of control.rows.slice(control.headerIdx + 1)) {
-    const code = normalizeCode(row[cols.codigo]);
+  for (const row of control) {
+    if (!row || typeof row !== 'object') continue;
+    const get = (k) => pick(row, CONTROL_COLS[k]);
+    const code = normalizeCode(get('codigo'));
     if (!/^DR\d{4,}$/.test(code)) continue; // filas de totales / vacias
-    const get = (k) => (cols[k] == null ? null : row[cols[k]]);
 
     const diasAdeudados = Math.abs(num(get('diasAdeudados')) ?? 0);
     const salarioDiario = num(get('salarioDiario'));
@@ -135,7 +152,7 @@ export function parseWorkbook(buffer) {
     let estado = String(get('estado') ?? '').trim();
     if (!estado) estado = deudaRestante <= 0 ? 'Saldado' : 'Pendiente';
 
-    // codigo repetido en el libro: se queda la fila que aun tiene deuda (o la primera)
+    // codigo repetido: se queda la fila que aun tiene deuda (o la primera)
     const prev = empleados.get(code);
     if (prev && !(prev.deudaRestante <= 0 && deudaRestante > 0)) continue;
     empleados.set(code, {
@@ -155,33 +172,68 @@ export function parseWorkbook(buffer) {
   }
 
   const movimientos = new Map();
-  const mov = pickSheet(wb, 'Movimientos', ['fecha', 'codigo', 'monto aplicado']);
-  if (mov) {
-    const mc = columnMap(mov.rows[mov.headerIdx], MOV_COLS);
-    for (const row of mov.rows.slice(mov.headerIdx + 1)) {
-      const code = normalizeCode(row[mc.codigo]);
-      if (!/^DR\d{4,}$/.test(code)) continue;
-      const monto = num(mc.monto == null ? null : row[mc.monto]);
-      const horas = num(mc.horas == null ? null : row[mc.horas]);
-      if (monto == null && horas == null) continue;
-      if (!movimientos.has(code)) movimientos.set(code, []);
-      movimientos.get(code).push({
-        fecha: toISODate(mc.fecha == null ? null : row[mc.fecha]),
-        horas: round2(horas),
-        tipoHora: mc.tipoHora == null || row[mc.tipoHora] == null ? null : String(row[mc.tipoHora]).trim(),
-        monto: round2(monto),
-        observacion: mc.observacion == null || row[mc.observacion] == null ? null : String(row[mc.observacion]).trim(),
-      });
-    }
-    for (const list of movimientos.values()) list.sort((a, b) => String(a.fecha ?? '').localeCompare(String(b.fecha ?? '')));
+  for (const row of Array.isArray(movRows) ? movRows : []) {
+    if (!row || typeof row !== 'object') continue;
+    const code = normalizeCode(pick(row, MOV_COLS.codigo));
+    if (!/^DR\d{4,}$/.test(code)) continue;
+    const monto = num(pick(row, MOV_COLS.monto));
+    const horas = num(pick(row, MOV_COLS.horas));
+    if (monto == null && horas == null) continue;
+    if (!movimientos.has(code)) movimientos.set(code, []);
+    const tipoHora = pick(row, MOV_COLS.tipoHora);
+    const obs = pick(row, MOV_COLS.observacion);
+    movimientos.get(code).push({
+      fecha: toISODate(pick(row, MOV_COLS.fecha)),
+      horas: round2(horas),
+      tipoHora: tipoHora == null || tipoHora === '' ? null : String(tipoHora).trim(),
+      monto: round2(monto),
+      observacion: obs == null || obs === '' ? null : String(obs).trim(),
+    });
   }
+  for (const list of movimientos.values()) list.sort((a, b) => String(a.fecha ?? '').localeCompare(String(b.fecha ?? '')));
 
   const info = {
-    hojaControl: control.name,
-    hojaMovimientos: mov?.name ?? null,
     empleados: empleados.size,
     conDeuda: [...empleados.values()].filter((e) => e.deudaRestante > 0).length,
     movimientos: [...movimientos.values()].reduce((a, l) => a + l.length, 0),
   };
   return { empleados, movimientos, info };
+}
+
+/** Lee el libro (.xlsb/.xlsx) y devuelve { empleados, movimientos, info }. */
+export function parseWorkbook(buffer) {
+  const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+  const control = pickSheet(wb, 'Control', ['codigo', 'dias adeudados', 'deuda inicial']);
+  if (!control) throw new Error('No se encontro la hoja "Control" (cabeceras Codigo / Dias adeudados / Deuda inicial)');
+  const header = control.rows[control.headerIdx];
+  const controlRows = control.rows.slice(control.headerIdx + 1).map((r) => rowToObject(header, r));
+  let movRows = [];
+  const mov = pickSheet(wb, 'Movimientos', ['fecha', 'codigo', 'monto aplicado']);
+  if (mov) movRows = mov.rows.slice(mov.headerIdx + 1).map((r) => rowToObject(mov.rows[mov.headerIdx], r));
+  const out = buildData({ control: controlRows, movimientos: movRows });
+  out.info = { hojaControl: control.name, hojaMovimientos: mov?.name ?? null, ...out.info };
+  return out;
+}
+
+/**
+ * Acepta el JSON que manda Power Automate con "Obtener filas de una tabla":
+ *   { "control": [ {fila}, ... ], "movimientos": [ {fila}, ... ] }
+ * Cada lista puede venir tambien como la salida completa de la accion ({ "value": [...] }).
+ */
+export function parseRows(json) {
+  const unwrap = (x) => {
+    if (Array.isArray(x)) return x;
+    if (x && typeof x === 'object' && Array.isArray(x.value)) return x.value;
+    if (typeof x === 'string') { try { return unwrap(JSON.parse(x)); } catch { return []; } }
+    return [];
+  };
+  const body = typeof json === 'string' ? JSON.parse(json) : (json || {});
+  const control = unwrap(body.control ?? body.Control ?? body.empleados);
+  const movimientos = unwrap(body.movimientos ?? body.Movimientos ?? body.pagos);
+  const clean = (rows) => rows.map((r) => {
+    const o = {};
+    for (const [k, v] of Object.entries(r || {})) if (!k.startsWith('@odata') && k !== 'ItemInternalId') o[k] = v;
+    return o;
+  });
+  return buildData({ control: clean(control), movimientos: clean(movimientos) });
 }
