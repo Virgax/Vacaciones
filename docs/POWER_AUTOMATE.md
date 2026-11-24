@@ -125,6 +125,10 @@ Hay dos maneras de montar el flujo. Las dos acaban en una acción **HTTP** hacia
    - *Configuración* de la acción HTTP → **Entradas seguras** y **Salidas seguras**.
 6. **Guardar** y **Probar**. La respuesta `200` es igual que en la variante 1 pero con `"via": "power automate (filas)"`.
 
+**Solo con la tabla Control**: si no quieres mandar los movimientos, deja una sola acción *Obtener filas* y en el cuerpo
+pon `{ "control": value }` (o directamente el contenido dinámico **body** de la acción). La consulta funciona igual; lo único
+que no aparece en pantalla es el historial de horas extras, porque los importes pagados salen de las columnas de Control.
+
 La app acepta las claves tal como vienen de Excel (`Código`, `Días adeudados iniciales`, `Deuda restante (RD$)`…),
 los números como texto, y las fechas en ISO 8601 o como número de serie de Excel. Ignora `@odata.etag` e `ItemInternalId`.
 

@@ -27,6 +27,10 @@ test('parseRows entiende la salida de Obtener filas de una tabla', () => {
   assert.deepEqual(movimientos.get('DR0001').map((m) => m.fecha), ['2026-10-31', '2026-11-02']);
   assert.throws(() => parseRows({ control: [{ Nombre: 'x' }] }), /Falta la columna/);
   assert.throws(() => parseRows({}), /No hay filas/);
+  // solo la tabla Control, pegando la salida de la accion tal cual
+  const solo = parseRows({ value: controlRows });
+  assert.equal(solo.info.empleados, 2); assert.equal(solo.info.movimientos, 0);
+  assert.equal(parseRows(controlRows).info.empleados, 2);
 });
 
 test('las filas se guardan en el volumen y se recuperan al reiniciar', async () => {

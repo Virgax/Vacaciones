@@ -228,7 +228,8 @@ export function parseRows(json) {
     return [];
   };
   const body = typeof json === 'string' ? JSON.parse(json) : (json || {});
-  const control = unwrap(body.control ?? body.Control ?? body.empleados);
+  // tambien vale pegar directamente la salida de la accion ({ "value": [...] }) o el array de filas
+  const control = unwrap(body.control ?? body.Control ?? body.empleados ?? body);
   const movimientos = unwrap(body.movimientos ?? body.Movimientos ?? body.pagos);
   const clean = (rows) => rows.map((r) => {
     const o = {};
