@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Administración · Vacaciones</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="admin-page">
+<header class="top">
+  <div class="brand"><img class="logo" src="logo.webp" alt="Airlink Dominican Republic · Assurant"><div><h1>Administración</h1><p>Origen de datos del control de vacaciones</p></div></div>
+  <a href="./" class="status">← Volver a la consulta</a>
+</header>
+<main>
+  <div class="card">
+    <h3>Clave de administración</h3>
+    <div class="field"><input type="password" id="key" placeholder="ADMIN_KEY" autocomplete="off"></div>
+    <div class="btns">
+      <button id="btn-status" type="button">Ver estado</button>
+      <button id="btn-refresh" type="button" class="ghost">Recargar desde SharePoint ahora</button>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Subir Excel manualmente</h3>
+    <p class="hint" style="margin-top:0">Solo si SharePoint no está configurado o no se puede alcanzar. El archivo subido se usa hasta que SharePoint vuelva a responder.</p>
+    <div class="field"><input type="file" id="file" accept=".xlsb,.xlsx,.xlsm"></div>
+    <button id="btn-upload" type="button">Subir y usar este archivo</button>
+  </div>
+  <div class="card">
+    <h3>Resultado</h3>
+    <pre id="out">—</pre>
+  </div>
+</main>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const out = $('out');
+  const key = $('key');
+  try { key.value = localStorage.getItem('adminKey') || ''; } catch {}
+  const headers = () => { try { localStorage.setItem('adminKey', key.value); } catch {} return { 'x-admin-key': key.value }; };
+  const show = (x) => { out.textContent = typeof x === 'string' ? x : JSON.stringify(x, null, 2); };
+  async function call(url, init) {
+    try { const r = await fetch(url, init); const j = await r.json(); show({ http: r.status, ...j }); } catch (e) { show('Error: ' + e.message); }
+  }
+  $('btn-status').onclick = () => call('/api/admin/status', { headers: headers() });
+  $('btn-refresh').onclick = () => call('/api/admin/refresh', { method: 'POST', headers: headers() });
+  $('btn-upload').onclick = async () => {
+    const f = $('file').files[0];
+    if (!f) return show('Elige un archivo .xlsb / .xlsx');
+    const buf = await f.arrayBuffer();
+    call('/api/admin/upload', { method: 'POST', headers: { ...headers(), 'content-type': 'application/octet-stream', 'x-file-name': f.name }, body: buf });
+  };
+})();
+</script>
+</body>
+</html>

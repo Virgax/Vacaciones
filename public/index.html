@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Consulta de Vacaciones</title>
+<meta name="description" content="Consulta de días de vacaciones compensados en dinero por código de empleado">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <img class="logo" src="logo.webp" alt="Airlink Dominican Republic · Assurant">
+    <div>
+      <h1>Control de días de vacaciones</h1>
+      <p>Compensación en dinero · consulta por empleado</p>
+    </div>
+  </div>
+  <div class="status" id="status" title="Estado de los datos">Cargando…</div>
+</header>
+
+<main>
+  <section class="scan" id="scan">
+    <label for="code">Escanea tu código de empleado</label>
+    <form id="form" autocomplete="off">
+      <input id="code" name="code" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="DR0000" autofocus>
+      <button type="submit" id="go">Consultar</button>
+    </form>
+    <p class="hint">Pasa el código de barras del carnet por el lector, o escribe el código y pulsa Enter.</p>
+    <p class="err" id="err" hidden></p>
+  </section>
+
+  <section class="result" id="result" hidden>
+    <div class="who">
+      <div>
+        <h2 id="r-nombre">—</h2>
+        <p class="meta"><span id="r-codigo">—</span><span id="r-depto"></span></p>
+      </div>
+      <span class="badge" id="r-estado">—</span>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h3>Deuda inicial</h3>
+        <div class="row"><span>Días adeudados</span><b id="r-dias-ini">—</b></div>
+        <div class="row"><span>Monto</span><b id="r-deuda-ini">—</b></div>
+      </div>
+      <div class="card">
+        <h3>Pendiente</h3>
+        <div class="row"><span>Días pendientes</span><b id="r-dias-pend">—</b></div>
+        <div class="row"><span>Deuda restante</span><b id="r-deuda-rest">—</b></div>
+      </div>
+      <div class="card paid">
+        <h3>Has pagado</h3>
+        <div class="row"><span>Días pagados</span><b id="r-dias-pag">—</b></div>
+        <div class="row"><span>Deuda pagada</span><b id="r-deuda-pag">—</b></div>
+        <div class="bar"><div id="r-bar"></div></div>
+        <div class="pct" id="r-pct">—</div>
+      </div>
+    </div>
+
+    <div class="movs" id="movs" hidden>
+      <h3>Horas extras aplicadas a la deuda</h3>
+      <table>
+        <thead><tr><th>Fecha</th><th>Horas</th><th>Tipo</th><th class="num">Monto aplicado</th></tr></thead>
+        <tbody id="r-movs"></tbody>
+      </table>
+    </div>
+
+    <div class="actions">
+      <button id="again" type="button">Nueva consulta</button>
+      <span class="auto" id="auto"></span>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <span id="datos">—</span>
+  <a href="admin.html" class="admin" title="Administración">⚙</a>
+</footer>
+<script src="app.js"></script>
+</body>
+</html>
