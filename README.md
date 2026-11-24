@@ -93,7 +93,7 @@ Cómo encuentra el archivo (en este orden): por `SP_FILE_PATH` si está; por el 
   USB funcionan como teclado y mandan Enter al final: no hay que configurar nada).
 - La caja de texto siempre tiene el foco; si se está mostrando un resultado y alguien escanea, empieza una consulta nueva.
 - Acepta `DR0333`, `dr333`, `333` o `0333` (los códigos numéricos de la nómina se convierten a `DR0333`).
-- El resultado se borra solo a los 45 s para que no quede a la vista de la siguiente persona.
+- El resultado se borra solo a los 20 s para que no quede a la vista de la siguiente persona.
 - Hay un límite de 40 consultas por minuto por dirección IP.
 
 ## API

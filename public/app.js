@@ -2,7 +2,7 @@
   const $ = (id) => document.getElementById(id);
   const form = $('form'), input = $('code'), go = $('go'), err = $('err');
   const scan = $('scan'), result = $('result');
-  const RESET_SECONDS = 45;
+  const RESET_SECONDS = 20;
   let resetTimer = null, countdown = null;
 
   const fmtMoney = (n) => 'RD$ ' + Number(n || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
