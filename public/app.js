@@ -129,6 +129,23 @@
     } finally { go.disabled = false; }
   });
 
+
+  // ---- fondo claro / oscuro ----
+  (function themeToggle() {
+    const btn = document.getElementById('theme');
+    if (!btn) return;
+    const root = document.documentElement;
+    const current = () => root.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    const paint = () => { btn.textContent = current() === 'dark' ? '☀' : '☾'; };
+    btn.addEventListener('click', () => {
+      const next = current() === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      try { localStorage.setItem('theme', next); } catch {}
+      paint();
+    });
+    paint();
+  })();
+
   loadStatus();
   setInterval(loadStatus, 60_000);
   focusInput();

@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="es">
+<script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -16,7 +17,10 @@
       <p>Compensación en dinero · consulta por empleado</p>
     </div>
   </div>
-  <div class="status" id="status" title="Estado de los datos">Cargando…</div>
+  <div class="right">
+    <div class="status" id="status" title="Estado de los datos">Cargando…</div>
+    <button class="theme" id="theme" type="button" title="Cambiar fondo claro/oscuro" aria-label="Cambiar fondo claro/oscuro">◐</button>
+  </div>
 </header>
 
 <main>

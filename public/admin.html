@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="es">
+<script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,7 +10,7 @@
 <body class="admin-page">
 <header class="top">
   <div class="brand"><img class="logo" src="logo.webp" alt="Airlink Dominican Republic · Assurant"><div><h1>Administración</h1><p>Origen de datos del control de vacaciones</p></div></div>
-  <a href="./" class="status">← Volver a la consulta</a>
+  <div class="right"><a href="./" class="status">← Volver a la consulta</a><button class="theme" id="theme" type="button" title="Cambiar fondo claro/oscuro">◐</button></div>
 </header>
 <main>
   <div class="card">
@@ -42,6 +43,23 @@
   async function call(url, init) {
     try { const r = await fetch(url, init); const j = await r.json(); show({ http: r.status, ...j }); } catch (e) { show('Error: ' + e.message); }
   }
+
+  // ---- fondo claro / oscuro ----
+  (function themeToggle() {
+    const btn = document.getElementById('theme');
+    if (!btn) return;
+    const root = document.documentElement;
+    const current = () => root.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    const paint = () => { btn.textContent = current() === 'dark' ? '☀' : '☾'; };
+    btn.addEventListener('click', () => {
+      const next = current() === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      try { localStorage.setItem('theme', next); } catch {}
+      paint();
+    });
+    paint();
+  })();
+
   $('btn-status').onclick = () => call('/api/admin/status', { headers: headers() });
   $('btn-refresh').onclick = () => call('/api/admin/refresh', { method: 'POST', headers: headers() });
   $('btn-upload').onclick = async () => {
