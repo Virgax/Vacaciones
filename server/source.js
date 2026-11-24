@@ -72,7 +72,7 @@ export class DataSource {
           try { meta = JSON.parse(fs.readFileSync(this.metaPath, 'utf8')); } catch { /* ignore */ }
         }
         this._apply(parsed, {
-          via: c.via,
+          via: meta.via && c.via === 'copia local' ? `${meta.via} (copia local)` : c.via,
           fileName: meta.fileName || path.basename(c.file),
           fileModified: meta.fileModified || fs.statSync(c.file).mtime.toISOString(),
         });
@@ -128,7 +128,7 @@ export class DataSource {
       const item = await this.graph.locateItem();
       // metadatos (barato) -> solo descargamos si cambio
       const meta = await (await this.graph.api(`/drives/${item.driveId}/items/${item.itemId}?$select=id,name,lastModifiedDateTime,size`)).json();
-      const changed = !this.data || meta.lastModifiedDateTime !== this.state.fileModified || this.state.via === 'copia local' || this.state.via === 'archivo local' || this.state.via === 'subido';
+      const changed = !this.data || meta.lastModifiedDateTime !== this.state.fileModified || !String(this.state.via).startsWith('sharepoint');
       if (changed) {
         const dl = await this.graph.download();
         const parsed = parseWorkbook(dl.buffer);
@@ -148,10 +148,12 @@ export class DataSource {
   }
 
   // ---------- subida manual (admin) ----------
-  uploadBuffer(buffer, fileName = 'subido.xlsb') {
+  uploadBuffer(buffer, fileName = 'subido.xlsb', { modified = null, via = 'subido' } = {}) {
     const parsed = parseWorkbook(buffer); // valida antes de guardar
-    this._apply(parsed, { via: 'subido', fileName, fileModified: new Date().toISOString() });
-    this._saveCopy(buffer, { fileName, fileModified: this.state.fileModified });
+    const d = modified ? new Date(modified) : null;
+    const fileModified = d && !Number.isNaN(d.getTime()) ? d.toISOString() : new Date().toISOString();
+    this._apply(parsed, { via, fileName, fileModified });
+    this._saveCopy(buffer, { fileName, fileModified, via });
     return parsed.info;
   }
 

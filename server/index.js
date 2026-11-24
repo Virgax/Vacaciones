@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { DataSource } from './source.js';
 import { GraphClient, graphConfigFromEnv } from './graph.js';
 import { normalizeCode } from './excel.js';
+import { decodeUploadBody } from './upload.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
@@ -72,10 +73,20 @@ app.post('/api/admin/refresh', requireAdmin, async (req, res) => {
   const changed = await source.checkLive(true);
   res.json({ ok: true, changed, ...source.status() });
 });
-app.post('/api/admin/upload', requireAdmin, express.raw({ type: () => true, limit: '25mb' }), (req, res) => {
-  if (!Buffer.isBuffer(req.body) || req.body.length < 100) return res.status(400).json({ error: 'Envia el archivo .xlsb/.xlsx en el cuerpo de la peticion' });
+// Subida del Excel. Acepta:
+//  - el archivo en crudo (application/octet-stream), p. ej. curl --data-binary
+//  - el JSON que genera Power Automate al poner "Contenido del archivo" en el cuerpo: {"$content-type":..., "$content":"<base64>"}
+//  - una cadena base64 a secas
+// Metadatos opcionales: x-file-name / ?name=, x-file-modified / ?modified= (fecha de modificacion en SharePoint), x-source / ?source=
+app.post('/api/admin/upload', requireAdmin, express.raw({ type: () => true, limit: '40mb' }), (req, res) => {
+  const buffer = decodeUploadBody(req.body);
+  if (buffer.length < 100) return res.status(400).json({ error: 'Envia el archivo .xlsb/.xlsx en el cuerpo de la peticion' });
+  const fileName = req.get('x-file-name') || req.query.name || 'subido.xlsb';
+  const modified = req.get('x-file-modified') || req.query.modified || null;
+  const via = req.get('x-source') || req.query.source || 'subido';
   try {
-    const info = source.uploadBuffer(req.body, req.get('x-file-name') || 'subido.xlsb');
+    const info = source.uploadBuffer(buffer, String(fileName), { modified: modified ? String(modified) : null, via: String(via) });
+    console.log(`[datos] subida (${via}): ${fileName} ${buffer.length} bytes, ${info.empleados} empleados, modificado ${source.state.fileModified}`);
     res.json({ ok: true, info, ...source.status() });
   } catch (e) {
     res.status(400).json({ error: `No se pudo leer el Excel: ${e.message}` });

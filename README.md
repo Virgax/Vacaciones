@@ -22,7 +22,17 @@ Lo que ve el empleado, sacado de la hoja **Control** del libro:
 No se muestra el salario. Si en el Excel una celda calculada viene vacía, la app la recalcula con las
 mismas fórmulas del libro (`|días| × salario diario`, `MAX(deuda − aplicado, 0)`…).
 
-## Cómo lee el Excel (failsafe)
+## Tres formas de alimentar la app
+
+| Opción | Qué necesita | Cómo se actualiza |
+|---|---|---|
+| **A. Power Automate** (recomendada, ver [docs/POWER_AUTOMATE.md](docs/POWER_AUTOMATE.md)) | un flujo con la acción HTTP (conector premium) | cada vez que RRHH guarda el Excel, el flujo lo envía a `/api/admin/upload` |
+| **B. Microsoft Graph** (sección 2) | una app registrada en Entra ID por TI | la app lee SharePoint en vivo en cada consulta |
+| **C. Subida manual** | la `ADMIN_KEY` | alguien sube el archivo en `/admin.html` |
+
+En todos los casos la app guarda el último Excel válido en su volumen y sigue respondiendo con él si lo demás falla.
+
+## Cómo lee el Excel con Graph (failsafe)
 
 1. **Al arrancar** carga primero la copia local (si existe) y luego intenta SharePoint.
 2. **En cada consulta** pregunta a SharePoint (una llamada ligera de metadatos) si el archivo cambió.
@@ -92,7 +102,7 @@ Cómo encuentra el archivo (en este orden): por `SP_FILE_PATH` si está; por el 
 | `GET /api/empleado/:codigo` | datos del empleado + `movimientos[]` + `datos{via, fileModified, online}`; 404 si no está, 400 si el código no es válido |
 | `GET /api/status` | origen, fecha del Excel, online/offline, número de empleados |
 | `POST /api/admin/refresh` | fuerza la comprobación en SharePoint (`x-admin-key`) |
-| `POST /api/admin/upload` | cuerpo = el archivo .xlsb/.xlsx (`x-admin-key`, opcional `x-file-name`) |
+| `POST /api/admin/upload` | cuerpo = el archivo .xlsb/.xlsx en crudo, o el JSON `{"$content": base64}` que manda Power Automate (`x-admin-key`; opcionales `x-file-name`, `x-file-modified`, `x-source`) |
 | `GET /health` | healthcheck de Railway |
 
 ## Desarrollo local

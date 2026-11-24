@@ -27,6 +27,7 @@
     const st = $('status');
     if (d.online === true) { st.textContent = 'SharePoint en vivo'; st.className = 'status online'; }
     else if (d.online === false) { st.textContent = 'Sin conexión · copia guardada'; st.className = 'status offline'; }
+    else if (/power automate/i.test(d.via || '')) { st.textContent = 'Sincronizado desde SharePoint'; st.className = 'status online'; }
     else { st.textContent = d.via ? `Datos: ${d.via}` : 'Sin datos'; st.className = 'status'; }
     $('datos').textContent = d.fileModified
       ? `Excel actualizado por RRHH: ${fmtDate(d.fileModified)}${d.online === false ? ' (última copia disponible)' : ''}`
