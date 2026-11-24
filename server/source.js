@@ -5,6 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseWorkbook, parseRows, normalizeCode } from './excel.js';
+import { createHash } from 'node:crypto';
 
 const CACHE_NAME = 'Control_Deuda_Vacaciones.cache.xlsb';
 const META_NAME = 'Control_Deuda_Vacaciones.cache.json';
@@ -20,8 +21,11 @@ export class DataSource {
    * @param {number} [o.minCheckMs]      no volver a preguntar a SharePoint antes de este tiempo (por defecto 15 s)
    * @param {number} [o.refreshMs]       refresco periodico en segundo plano (0 = desactivado)
    */
-  constructor({ dataDir, localFile = '', graph = null, minCheckMs = 15_000, refreshMs = 0, log = console }) {
+  constructor({ dataDir, localFile = '', graph = null, flowUrl = '', flowMethod = 'POST', fetchImpl = globalThis.fetch, minCheckMs = 15_000, refreshMs = 0, log = console }) {
     this.dataDir = dataDir;
+    this.flowUrl = flowUrl;
+    this.flowMethod = flowMethod;
+    this.fetch = fetchImpl;
     this.localFile = localFile;
     this.graph = graph;
     this.minCheckMs = minCheckMs;
@@ -29,7 +33,8 @@ export class DataSource {
     this.log = log;
     this.data = null;           // { empleados, movimientos, info }
     this.state = {
-      source: graph ? 'sharepoint' : 'local',   // de donde viene la configuracion
+      source: flowUrl ? 'flow' : graph ? 'sharepoint' : 'local',   // de donde viene la configuracion
+      hash: null,                                // huella del ultimo contenido recibido del flujo
       online: null,                              // ultimo intento a SharePoint: true/false
       loadedAt: null,                            // cuando se parseo lo que esta en memoria
       fileModified: null,                        // lastModified del Excel en SharePoint (o mtime del archivo)
@@ -53,12 +58,12 @@ export class DataSource {
     // 1) copia local primero, para poder responder aunque SharePoint tarde o falle
     this._loadLocalCopy();
     // 2) intento en vivo
-    if (this.graph) await this.checkLive(true).catch(() => {});
-    if (this.refreshMs > 0 && this.graph) {
+    if (this.live) await this.checkLive(true).catch(() => {});
+    if (this.refreshMs > 0 && this.live) {
       this._timer = setInterval(() => this.checkLive(true).catch(() => {}), this.refreshMs);
       this._timer.unref?.();
     }
-    if (!this.data) throw new Error(this.state.lastError || 'No hay datos: configura SharePoint (GRAPH_*/SP_FILE_URL), DATA_FILE o sube el Excel desde /admin.html');
+    if (!this.data) throw new Error(this.state.lastError || 'No hay datos: configura FLOW_URL, SharePoint (GRAPH_*/SP_FILE_URL), DATA_FILE o sube el Excel desde /admin.html');
     return this.state;
   }
 
@@ -85,6 +90,7 @@ export class DataSource {
           fileName: meta.fileName || path.basename(c.file),
           fileModified: meta.fileModified || fs.statSync(c.file).mtime.toISOString(),
         });
+        this.state.hash = meta.hash || null;
         this.log.log(`[datos] ${c.via}: ${c.file} (${parsed.info.empleados} empleados, Excel de ${this.state.fileModified})`);
         return true;
       } catch (e) {
@@ -122,8 +128,10 @@ export class DataSource {
    * Varias consultas simultaneas comparten la misma comprobacion; y no se pregunta mas de una vez por minCheckMs.
    * Nunca lanza: deja el resultado en state.online / state.lastError.
    */
+  get live() { return !!(this.flowUrl || this.graph); }
+
   async checkLive(force = false) {
-    if (!this.graph) return false;
+    if (!this.live) return false;
     if (this._checking) return this._checking;
     const last = this.state.lastCheck ? Date.parse(this.state.lastCheck) : 0;
     if (!force && Date.now() - last < this.minCheckMs) return false;
@@ -133,6 +141,7 @@ export class DataSource {
 
   async _doCheck() {
     this.state.lastCheck = new Date().toISOString();
+    if (this.flowUrl) return this._checkFlow();
     try {
       const item = await this.graph.locateItem();
       // metadatos (barato) -> solo descargamos si cambio
@@ -152,6 +161,39 @@ export class DataSource {
       this.state.online = false;
       this.state.lastError = e.message;
       this.log.warn(`[datos] SharePoint no disponible: ${e.message}${this.data ? ' -> usando ' + this.state.via : ''}`);
+      return false;
+    }
+  }
+
+  /** Llama al flujo de Power Automate (desencadenador HTTP) que devuelve las filas de la tabla Control. */
+  async _checkFlow() {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 90_000);
+      let r;
+      try {
+        r = await this.fetch(this.flowUrl, { method: this.flowMethod, headers: { 'content-type': 'application/json', accept: 'application/json' }, body: this.flowMethod === 'GET' ? undefined : '{}', signal: ctrl.signal });
+      } finally { clearTimeout(t); }
+      const text = await r.text();
+      if (!r.ok) throw new Error(`flujo respondio ${r.status}: ${text.slice(0, 200)}`);
+      const hash = createHash('sha1').update(text).digest('hex');
+      const changed = !this.data || hash !== this.state.hash || !String(this.state.via).startsWith('power automate (flujo)');
+      if (changed) {
+        const parsed = parseRows(text); // valida (lanza si no son filas de Control)
+        const sameContent = hash === this.state.hash;
+        const fileModified = sameContent && this.state.fileModified ? this.state.fileModified : new Date().toISOString();
+        this._apply(parsed, { via: 'power automate (flujo)', fileName: 'TablaControl', fileModified });
+        this.state.hash = hash;
+        this._saveCopy(Buffer.from(text), { fileName: 'TablaControl', fileModified, via: 'power automate (flujo)', hash }, { file: this.rowsPath, metaFile: this.rowsMetaPath });
+        this.log.log(`[datos] flujo: ${parsed.info.empleados} empleados (${text.length} bytes, cambio detectado ${fileModified})`);
+      }
+      this.state.online = true;
+      this.state.lastError = null;
+      return changed;
+    } catch (e) {
+      this.state.online = false;
+      this.state.lastError = e.name === 'AbortError' ? 'el flujo tardo mas de 90 s' : e.message;
+      this.log.warn(`[datos] flujo no disponible: ${this.state.lastError}${this.data ? ' -> usando ' + this.state.via : ''}`);
       return false;
     }
   }

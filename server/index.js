@@ -12,8 +12,11 @@ const ADMIN_KEY = process.env.ADMIN_KEY || '';
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 
 const graphCfg = graphConfigFromEnv();
+const FLOW_URL = process.env.FLOW_URL || '';
 const source = new DataSource({
   dataDir: DATA_DIR,
+  flowUrl: FLOW_URL,
+  flowMethod: (process.env.FLOW_METHOD || 'POST').toUpperCase(),
   localFile: process.env.DATA_FILE || '',
   graph: graphCfg ? new GraphClient(graphCfg) : null,
   minCheckMs: Number(process.env.MIN_CHECK_SECONDS || 15) * 1000,
@@ -21,7 +24,8 @@ const source = new DataSource({
 });
 
 if (!ADMIN_KEY) console.warn('[aviso] ADMIN_KEY vacia: las acciones de administracion quedan abiertas');
-if (!graphCfg) console.warn('[aviso] SharePoint no configurado (GRAPH_TENANT_ID / GRAPH_CLIENT_ID / GRAPH_CLIENT_SECRET / SP_FILE_URL): se usara DATA_FILE o el Excel subido');
+if (FLOW_URL) console.log('[datos] origen: flujo de Power Automate (FLOW_URL)');
+else if (!graphCfg) console.warn('[aviso] ni FLOW_URL ni SharePoint (GRAPH_*/SP_FILE_URL) configurados: se usara DATA_FILE o el Excel subido');
 
 const app = express();
 app.disable('x-powered-by');
@@ -71,6 +75,7 @@ app.get('/api/empleado/:codigo', rateLimit(40, 60_000), async (req, res) => {
 // ---------- administracion ----------
 app.post('/api/admin/refresh', requireAdmin, async (req, res) => {
   const changed = await source.checkLive(true);
+  if (!source.live) return res.json({ ok: true, changed: false, aviso: 'No hay origen en vivo (FLOW_URL o Graph); se usan los datos subidos', ...source.status() });
   res.json({ ok: true, changed, ...source.status() });
 });
 // Subida del Excel. Acepta:

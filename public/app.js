@@ -29,8 +29,9 @@
     else if (d.online === false) { st.textContent = 'Sin conexión · copia guardada'; st.className = 'status offline'; }
     else if (/power automate/i.test(d.via || '')) { st.textContent = 'Sincronizado desde SharePoint'; st.className = 'status online'; }
     else { st.textContent = d.via ? `Datos: ${d.via}` : 'Sin datos'; st.className = 'status'; }
+    const etiqueta = /flujo/i.test(d.via || '') ? 'Último cambio del Excel detectado' : 'Excel actualizado por RRHH';
     $('datos').textContent = d.fileModified
-      ? `Excel actualizado por RRHH: ${fmtDate(d.fileModified)}${d.online === false ? ' (última copia disponible)' : ''}`
+      ? `${etiqueta}: ${fmtDate(d.fileModified)}${d.online === false ? ' (última copia disponible)' : ''}`
       : 'Sin datos cargados';
   }
   async function loadStatus() {

@@ -4,7 +4,7 @@ Con Power Automate no hace falta registrar ninguna aplicación en Entra ID. Cada
 SharePoint, un flujo manda los datos a la app, que los valida, los guarda en su volumen y los usa desde ese momento.
 La pantalla muestra "Sincronizado desde SharePoint" y la fecha de modificación del archivo.
 
-Hay dos maneras de montar el flujo. Las dos acaban en una acción **HTTP** hacia la app:
+Hay tres maneras de montar el flujo. La **variante 3** es la que está configurada; las otras dos acaban en una acción **HTTP** hacia la app:
 
 | | Variante 1: enviar el archivo | Variante 2: enviar las filas (*Obtener filas de una tabla*) |
 |---|---|---|
@@ -24,6 +24,47 @@ Hay dos maneras de montar el flujo. Las dos acaban en una acción **HTTP** hacia
 > **Licencia**: la acción **HTTP** de Power Automate es un conector *premium* en las dos variantes. Hace falta que la
 > cuenta que crea el flujo tenga Power Automate Premium (o un plan por flujo). Si no la tienes, las alternativas son
 > la lectura directa con Microsoft Graph (README, sección 2) o subir el Excel a mano desde `/admin.html`.
+
+## Variante 3 (la que está en marcha): la app llama al flujo
+
+Es la más sencilla y la que queda configurada en Railway. El flujo no envía nada: **responde** con las filas de la tabla
+cuando la app lo llama. La app lo llama cuando alguien consulta (como mucho una vez por minuto), guarda la última respuesta
+en su volumen y, si Power Automate o Internet fallan, sigue respondiendo con esa copia.
+
+```
+ Empleado escanea ──► app en Railway ──► POST a la URL del flujo ──► Obtener filas (TablaControl) ──► Respuesta JSON
+                              │
+                              └─► copia en /data (failsafe)
+```
+
+El flujo tiene tres pasos:
+
+1. Desencadenador **Cuando se recibe una solicitud HTTP** (método POST; no hace falta esquema del cuerpo).
+2. **Obtener filas de una tabla** (Excel Online (Business)): el `.xlsx` de SharePoint y la tabla `TablaControl`.
+   En ⋯ → *Configuración* activa **Paginación** con umbral `5000`.
+3. **Respuesta**: código `200`, cabecera `Content-Type: application/json`, cuerpo = contenido dinámico **value** de
+   *Obtener filas* (la app también acepta la salida completa de la acción, con `value` dentro).
+
+Al guardar, el desencadenador muestra la **URL de POST**. Esa URL lleva una firma (`sig=`) que da acceso al flujo:
+se guarda solo en Railway, en la variable `FLOW_URL`, y no se comparte. Variables relacionadas:
+
+| Variable | Valor |
+|---|---|
+| `FLOW_URL` | la URL del desencadenador HTTP del flujo |
+| `FLOW_METHOD` | `POST` (por defecto) o `GET` |
+| `MIN_CHECK_SECONDS` | `60`: no se vuelve a llamar al flujo antes de este tiempo, aunque haya muchas consultas |
+| `REFRESH_MINUTES` | `10`: refresco en segundo plano aunque nadie consulte (0 para desactivarlo) |
+
+Cada llamada es una ejecución del flujo (cuenta para los límites diarios de Power Automate). Con el límite de una por
+minuto y el refresco cada 10 minutos, el máximo teórico son unas 1 500 ejecuciones al día; en la práctica, muchas menos.
+
+En pantalla, la pastilla dice **SharePoint en vivo** cuando el flujo responde y **Sin conexión · copia guardada** si falla.
+El pie muestra "Último cambio del Excel detectado": la hora en la que la app vio por primera vez la versión actual de la tabla.
+
+---
+
+Las variantes 1 y 2 de abajo son la alternativa "por empuje": el flujo se dispara al modificar el archivo y manda los datos
+a la app. Sirven si en algún momento prefieres no exponer una URL de flujo.
 
 ## Datos que necesitas
 

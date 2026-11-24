@@ -26,7 +26,7 @@ mismas fórmulas del libro (`|días| × salario diario`, `MAX(deuda − aplicado
 
 | Opción | Qué necesita | Cómo se actualiza |
 |---|---|---|
-| **A. Power Automate** (recomendada, ver [docs/POWER_AUTOMATE.md](docs/POWER_AUTOMATE.md)) | un flujo con la acción HTTP (conector premium) | cada vez que RRHH guarda el Excel, el flujo manda el archivo a `/api/admin/upload` o las filas de sus tablas a `/api/admin/rows` |
+| **A. Power Automate** (configurada, ver [docs/POWER_AUTOMATE.md](docs/POWER_AUTOMATE.md)) | un flujo con desencadenador HTTP que responde con las filas de `TablaControl`; su URL va en `FLOW_URL` | la app llama al flujo en cada consulta (máx. una vez por minuto) y guarda copia; variantes por empuje a `/api/admin/upload` o `/api/admin/rows` |
 | **B. Microsoft Graph** (sección 2) | una app registrada en Entra ID por TI | la app lee SharePoint en vivo en cada consulta |
 | **C. Subida manual** | la `ADMIN_KEY` | alguien sube el archivo en `/admin.html` |
 
@@ -54,7 +54,8 @@ En todos los casos la app guarda el último Excel válido en su volumen y sigue 
    |---|---|
    | `ADMIN_KEY` | clave para "Recargar" y "Subir Excel" en `/admin.html` (cabecera `x-admin-key`) |
    | `DATA_DIR` | `/data` (la carpeta del volumen) |
-   | `SP_FILE_URL` | el enlace del Excel en SharePoint, tal cual lo abre el navegador |
+   | `FLOW_URL` | URL del desencadenador HTTP del flujo de Power Automate que devuelve las filas (opción A) |
+   | `SP_FILE_URL` | el enlace del Excel en SharePoint, tal cual lo abre el navegador (opción B) |
    | `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_CLIENT_SECRET` | credenciales de la app registrada en Entra ID (paso 2) |
    | `SP_FILE_PATH` | (opcional) ruta del archivo dentro de la biblioteca, p. ej. `Documentos compartidos/RRHH/Control_Deuda_Vacaciones.xlsb`; evita buscarlo por nombre |
    | `REFRESH_MINUTES` | (opcional) refresco en segundo plano; `0` = solo al consultar |
