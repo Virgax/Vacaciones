@@ -114,7 +114,11 @@ app.post('/api/admin/rows', requireAdmin, express.json({ limit: '40mb', type: ()
 });
 app.get('/api/admin/status', requireAdmin, (req, res) => res.json(source.status()));
 
-app.use(express.static(path.join(__dirname, '..', 'public'), { etag: true, maxAge: '1h', index: 'index.html' }));
+// html/js/css siempre se revalidan (sin esto el navegador del kiosco se queda una hora con la version vieja); imagenes 1 dia
+app.use(express.static(path.join(__dirname, '..', 'public'), {
+  etag: true, index: 'index.html', maxAge: '1d',
+  setHeaders(res, file) { if (/\.(html|js|css|json)$/i.test(file)) res.set('Cache-Control', 'no-cache'); },
+}));
 app.use((req, res) => res.status(404).json({ error: 'not found' }));
 
 source.init()
